@@ -12,14 +12,23 @@ using namespace std;
 
 class Key
 {
+private:
+    void setlength();
+    unsigned char _key[256]= {0};
+    int _length = 0;
+
 public:
+    bool atMax = false;
+    Key& operator++();       
+    Key operator++(int);     
     void printKey();
     void setKey(unsigned long long number) ;
     Key() {};
     Key(unsigned long long number);
-    unsigned long long value;
-    unsigned char key[256];
-    int length = 0;
+    unsigned char * key();
+    int length() { return _length; };
+
+
 
 };
 
@@ -84,7 +93,7 @@ void Cipher::Encrypt(Key key)
 
     for (a = 0; a < 256; a++)
     {
-        b = (b + SubBox[a] + key.key[a % key.length]) % 256;
+        b = (b + SubBox[a] + key.key()[a % key.length()]) % 256;
         swap = SubBox[a];
         SubBox[a] = SubBox[b];
         SubBox[b] = swap;
@@ -140,19 +149,17 @@ void Cipher::printCipher()
         else
         {
 
-            printf(" %02x", cipher[x]);
-            lastWasHex = true;
+printf(" %02x", cipher[x]);
+lastWasHex = true;
         }
     }
 }
-
 Key::Key(unsigned long long v)
 {
-    value = v;
-    setKey(value);
+    setKey(v);
 
 }
-void Key::setKey(unsigned long long number) 
+void Key::setKey(unsigned long long number)
 {
     int x = 0;
     int y = 0;
@@ -160,44 +167,95 @@ void Key::setKey(unsigned long long number)
 
     for (x = 0; x < 8; x++)
     {
-        key[7 - x] = (number >> (8 * x)) & 0xff;
+        _key[255 - x] = (number >> (8 * x)) & 0xff;
 
     }
     x = 0;
     while (x < 8) // this moves the key to the front of the array
     {
-        if (!first && key[x] != 0)
+        if (!first && _key[x] != 0)
         {
             first = true;
-            length = 8 - x;
-            key[y++] = key[x];
+            _key[y++] = _key[x];
         }
         else if (first)
         {
-            key[y++] = key[x];
+            _key[y++] = _key[x];
         }
         x++;
     }
     while (y < 8)//zeroing the remaining values
     {
-        key[y++] = 0;
+        _key[y++] = 0;
     }
-
+    setlength();
 
 };
 void Key::printKey()
 {
     printf("[");
-    for (int x = 0; x < length; x++)
+    for (int x = 0; x < _length; x++)
     {
-        printf("%02x ", key[x]);
+        printf("%02x ", key()[x]);
 
     }
     printf("]");
 }
+Key& Key::operator++()
+{
+    int x = 255;
+    int max = 0;
+    while (x > -1)
+    {
+        if (_key[x] >= 255)
+        {
+            _key[x--] = 0;
+            max = 256 - x;
+        }
+        else
+        {
+            _key[x] ++;
+            x = -2;
+        }
+    }
+    if (x == -1)
+    {
+        atMax = true;
+    }
 
+    if (_length < max) _length = max;
 
-
+    return *this;
+}
+Key Key::operator++(int)
+{
+    Key temp = *this;
+    ++* this;
+    return temp;
+}
+unsigned char* Key::key()
+{
+    int x = 0;
+    for(int x = 0; x < 256;x++)
+    {
+        if (_key[x] != 0)
+        {
+            unsigned char* t = &_key[x];
+            return t;
+        }
+    }
+}
+void Key::setlength()
+{
+    int x = 255;
+    for (int x = 0; x <256;x++)
+    {
+        if (_key[x] != 0)
+        {
+            _length = 256-x;
+        }
+    }
+}
 
 int ParseInputs(int argc, char** argv);
 void BruteForce(Cipher cipher, unsigned long long min = 1, unsigned long long max = ULLONG_MAX);

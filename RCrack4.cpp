@@ -48,15 +48,15 @@ int main(int argc, char** argv)
     }
 
 }
+//TODO add keys past long long max value, max value needs to brute force up to 256 byte key, this will only do up to 8byte.
 void BruteForce(Cipher cipher ,unsigned long long min, unsigned long long max )
 {
 
-    Key key;
+    Key key= Key(min);
 
-    for (unsigned long long x = min; x < max; x++)
+    while(!key.atMax)
     {
         
-        key.setKey(x);
         cipher.Encrypt(key);
         if (cipher.isAsciiOutput()) 
         {
@@ -65,8 +65,8 @@ void BruteForce(Cipher cipher ,unsigned long long min, unsigned long long max )
             cipher.printOutCipher();
             printf("\n");
         }
-
-    } // end for loop
+        key++;
+    } // end loop
 
 }
 
