@@ -7,14 +7,8 @@
 * "Coded by Viotto © BreakingSecurity.net"
 ***********************************************************/
 
-#include <iostream>
-#include <string>
-#include <malloc.h>
-#include <string.h>
-#include <stdint.h>
-#include <fstream>
-#include <vector>
-#define _CRT_NONSTDC_NO_DEPRECATE
+
+#include "RCrack4.h"
 
 // Perform dictionary attack look for word in list
 // Create attack that looks for strings with only Ascii characters
@@ -23,23 +17,18 @@
 // 
 
 
-void PrintHex(unsigned char* sample);
-int MakeKey(unsigned long long key, unsigned char* hkey);
-void PrintHexKey(unsigned char* sample);
-int ParseInputs(int argc, char** argv);
-void BruteForce(unsigned char *, unsigned long long min = 0, unsigned long long max = ULLONG_MAX);
-void BuildCipher(unsigned char* Key, unsigned int lenKey, unsigned char* string, unsigned int lenString);
-void PrintHelp();
-int readFile(char *, std::vector<char> *);
-bool isCipherAscii(unsigned char* cipher);
 
 int main(int argc, char** argv)
 {
-    unsigned char* cipher = {0x00};
     std::vector<char> fileData;
 
     int mode = ParseInputs(argc, argv);
     int len = readFile(argv[1], &fileData);
+    
+    Cipher cipher= Cipher(fileData);
+    printf("read file: \n");
+    cipher.printCipher();
+    printf("\n");
 
     switch (mode)
     {
@@ -47,6 +36,7 @@ int main(int argc, char** argv)
         break;
     case 0:
         PrintHelp();
+
         break;
 
     case 1: 
@@ -58,31 +48,28 @@ int main(int argc, char** argv)
     }
 
 }
-void BruteForce(unsigned char * cipher ,unsigned long long min, unsigned long long max )
+void BruteForce(Cipher cipher ,unsigned long long min, unsigned long long max )
 {
-    unsigned char hkey[10]{};
-    int len = 0;
-    int cipherLen = 0;
+
+    Key key;
+
     for (unsigned long long x = min; x < max; x++)
     {
         
-        unsigned char te[10];
-        long p = 2712847316;//a1b2c3d4
-        len = MakeKey(x, hkey);
-        BuildCipher(hkey, len, cipher, cipherLen);
-        if (isCipherAscii(cipher)) { printf(" %s", cipher); }
+        key.setKey(x);
+        cipher.Encrypt(key);
+        if (cipher.isAsciiOutput()) 
+        {
+            key.printKey();
+            printf(" -> ");
+            cipher.printOutCipher();
+            printf("\n");
+        }
 
-
-        
-
-
-    }
+    } // end for loop
 
 }
-bool isCipherAscii(unsigned char * cipher)
-{
-    return false;
-}
+
 //Will readfile and return the length of the data.
 int readFile(char * file, std::vector<char> *data)
 {
@@ -96,69 +83,6 @@ int readFile(char * file, std::vector<char> *data)
     return bytes.size();
 }
 
-
-//
-void BuildCipher(unsigned char* key, unsigned int lenKey, unsigned char* cipher, unsigned int lenCipher)
-{
-    int SubBox[256];
-    int a = 0;
-    int b = 0;
-    int swap = 0;
-
-    for (a = 0; a < 256; a++)
-    {
-        SubBox[a] = a;
-    }
-
-    for (a = 0; a < 256; a++)
-    {
-        b = (b + SubBox[a] + key[a % lenKey]) % 256;
-        swap = SubBox[a];
-        SubBox[a] = SubBox[b];
-        SubBox[b] = swap;
-    }
-
-    //Encrypt the data
-    for (long Offset = 0; Offset < lenCipher; Offset++)
-    {
-        a = (a + 1) % 256;
-        b = (b + SubBox[a]) % 256;
-        swap = SubBox[a];
-        SubBox[a] = SubBox[b];
-        SubBox[b] = swap;
-        cipher[Offset] ^= SubBox[(SubBox[a] + SubBox[b]) % 256];
-    }
-}
-
-
-
-int MakeKey(unsigned long long key, unsigned char * hkey)
-{
-    for (int x = 0; x < 8; x++)
-    {
-        hkey[7 - x] = (char)(key >> x * 8);
-    }
-    return 0;
-}
-void PrintHex(unsigned char *sample)
-{
-    while (*sample)
-    {
-        if (*sample > 31 && *sample < 127)printf("%c ", *(sample++));
-        else printf("%x ", *(sample++));
-        
-    }
-    printf("\n");
-}
-void PrintHexKey(unsigned char* sample)
-{
-    for(int x = 0; x<4;x++)
-    {
-        printf("%x ", sample[x]);
-
-    }
-    printf("\n");
-}
 int ParseInputs(int argc, char** argv)
 {
     // check valid cipher 
