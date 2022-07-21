@@ -7,51 +7,73 @@
 
 #include "RCrack4.h"
 
-
-
-
-
 int main(int argc, char *argv[])
 {
     std::vector<char> fileData;
+    std::vector<string> wordList;
+    int c_KeysPerThread = 4096;
 
-    int mode = ParseInputs(argc, argv);
-    int len = readFile(argv[1], &fileData);
-    
-    Cipher cipher= Cipher(fileData);
-    printf("read file: \n");
-    cipher.printCipher();
-    printf("\n");
-    int i;
+    struct Options opt = ParseInputs(argc, argv);
+    readCipherFile(argv[1], &fileData);
 
-
-    //mode = 1;
-
-    switch (mode)
+    if (opt.ptrWordList)
     {
-    case -1:// something broke
-        break;
-    case 0:
-        PrintHelp();
-
-        break;
-
-    case 1: 
-        i = multiThreadedBruteForce(cipher);
-        break;
-
-    case 2:
-        //KnownValue(cipher);
-        break;
-
-    case 3:
-       //KnownValue(cipher);
-        break;
-
-    default:
-        break;
+        readWordListFile(opt.ptrWordList, &wordList);
     }
 
+    printf("[!] Cipher read from file: \n");
+    printf("\n");
+    char * tt = (char*)malloc(fileData.size() + 1);
+    ThreadedCipher::s_ptrCipher = (unsigned char*)malloc(fileData.size() + 1);
+  
+
+    if (ThreadedCipher::s_ptrCipher)
+    {
+        ThreadedCipher::s_ptrCipher = (unsigned char *)fileData.data();
+        ThreadedCipher::s_ptrCipher[fileData.size()] = 0;
+    }
+
+    ThreadedCipher::s_Verbose = opt.verbose;
+    ThreadedCipher::s_Positional = opt.positional;
+    ThreadedCipher::s_ptrOutfile = opt.ptrOutFile;
+    ThreadedCipher::s_CipherLen = fileData.size();
+
+    Key key = Key(opt.minBytes);
+    vector<thread> threads;
+
+    //test
+    Key ke = Key(2);
+    ke.Add(24673);
+    ThreadedCipher ciph = ThreadedCipher();
+    ciph(ke, c_KeysPerThread, 10);
+
+    //end test
+
+    for (int x = 0; x < opt.threads; x++)// seeds the original threads into a vector
+    {
+        threads.push_back(thread(ThreadedCipher(), key, c_KeysPerThread, x));
+        key.Add(c_KeysPerThread);
+    }
+
+    while (!key.atMax && key.length() <= opt.maxBytes)
+    {
+        for (int x = 0; x < opt.threads; x++)// loops through threads to see if one is available
+        {
+            if (threads[x].joinable())
+            {
+                threads[x].join();
+                threads[x] = thread(ThreadedCipher(), key, c_KeysPerThread, x);
+                key.Add(c_KeysPerThread);
+            }
+
+        }
+
+    }
+    if (ThreadedCipher::s_ptrWordlist)free(ThreadedCipher::s_ptrWordlist);
+    if (ThreadedCipher::s_ptrCipher)free(ThreadedCipher::s_ptrCipher);
+    if (ThreadedCipher::s_ptrOutfile)free(ThreadedCipher::s_ptrOutfile);
+    if (opt.ptrOutFile)  free(opt.ptrOutFile);
+    if (opt.ptrWordList) free(opt.ptrWordList);
 }
 
 void WriteFile() 
@@ -59,7 +81,7 @@ void WriteFile()
     FILE* pFile;
     char buffer[100];
 
-    pFile = fopen("myfile.txt", "r");
+    pFile = fopen("output.txt", "a");
     if (pFile == NULL) perror("Error opening file");
     else
     {
@@ -72,79 +94,97 @@ void WriteFile()
     }
 }
 
-int ParseInputs(int argc, char** argv)
+struct Options ParseInputs(int argc, char** argv)
 {
+    struct Options opt;
     // check valid cipher 
+    char* key;
     std::ifstream ifile;
     ifile.open(argv[1]);
-    if (!ifile) {
-        printf("Error: Cipher file not found");
-        return -1;
-    }
+        if (!ifile)
+        {
+        perror("Error opening file");
+        }
+
     //TODO FIX
-    char outfile[300] = {0};
-    char wordlist[300] = {0};
 
     int x = 1;
     while (x < argc)
     {
         if (strcmp(argv[x], "-o") == 0 || strcmp(argv[x], "--out-file") == 0)
         {
-            strcpy(outfile, argv[x + 1]);
+            opt.ptrOutFile = (char*)malloc(sizeof(argv[x + 1] ) + 1);
+            strcpy(opt.ptrOutFile, argv[x + 1]);
+            x += 2;
+
         }
-        else if (strcmp(argv[x], "-n") == 0 || strcmp(argv[x], "--min-value") == 0)
+        else if (strcmp(argv[x], "-n") == 0 || strcmp(argv[x], "--min-bytes") == 0)
         {
-            MIN_BYTES = atoi(argv[x + 1]);
+            opt.minBytes = atoi(argv[x + 1]);
+            x += 2;
         }
         else if (strcmp(argv[x], "-t") == 0 || strcmp(argv[x], "--threads") == 0)
         {
-            THREADS = atoi(argv[x + 1]);
+            opt.threads = atoi(argv[x + 1]);
+            x += 2;
         }
-        else if (strcmp(argv[x], "-x") == 0 || strcmp(argv[x], "--max-value") == 0)
+        else if (strcmp(argv[x], "-x") == 0 || strcmp(argv[x], "--max-bytes") == 0)
         {
-            MAX_BYTES = atoi( argv[x + 1]);
+            opt.maxBytes = atoi( argv[x + 1]);
+            x += 2;
         }
-        else if (VERBOSE != -1 && (  strcmp(argv[x], "-v") == 0 || strcmp(argv[x], "--verbose") == 0 ))
+        else if (strcmp(argv[x], "-p") == 0 || strcmp(argv[x], "--positional") == 0)
         {
-            VERBOSE = 1;
+            opt.positional = true;
+            x++;
+        }
+        else if ( strcmp(argv[x], "-k") == 0 || strcmp(argv[x], "--keyasciionly") == 0 )
+        {
+            //VERBOSE = 1;
+            x++;
+        }
+        else if (strcmp(argv[x], "-v") == 0 || strcmp(argv[x], "--verbose") == 0)
+        {
+            opt.verbose = 1;
+            x++;
         }
         else if (strcmp(argv[x], "-q") == 0 || strcmp(argv[x], "--quiet") == 0)
         {
-            VERBOSE = -1;
+            opt.verbose = -1;
+            x++;
+        }
+        else if (strcmp(argv[x], "-s") == 0 || strcmp(argv[x], "--singleKey") == 0)
+        {
+           key = (char*)malloc(sizeof(argv[x + 1]) + 1);
+            x += 2;
         }
         else if (strcmp(argv[x], "-w") == 0 || strcmp(argv[x], "--word-list") == 0)
         {
-            strcpy(wordlist, argv[x + 1]);
+            
+            std::ifstream ifile;
+            ifile.open(argv[x+1]);
+            if (!ifile) {
+                printf("Error: outfile not found");
+            }
+
+            opt.ptrWordList = (char*)malloc(sizeof(argv[x + 1]) + 1);
+            strcpy(opt.ptrWordList, argv[x + 1]);
+            x += 2;
+        }
+        else
+        {
+            x++;
         }
 
-        x += 2;
+        
         
     }
 
-    return 1;
-}
-
-void BruteForce(Cipher cipher ,unsigned long long min, unsigned long long max )
-{
-    Key key= Key(min);
-
-    while(!key.atMax)
-    {
-        cipher.Encrypt(key);
-        if (cipher.isAsciiOutput()) 
-        {
-            key.printKey();
-            printf(" -> ");
-            cipher.printOutCipher();
-            printf("\n");
-        }
-        key++;
-    } // end loop
-
+    return opt;
 }
 
 //Will readfile and return the length of the data.
-int readFile(char * file, std::vector<char> *data)
+int readCipherFile(char * file, std::vector<char> *data)
 {
     std::ifstream input(file, std::ios::binary);
 
@@ -156,147 +196,18 @@ int readFile(char * file, std::vector<char> *data)
     return bytes.size();
 }
 
-int KnownValue(Cipher cipher, char* value)
+
+void readWordListFile(char* filea, std::vector<string>* data)
 {
-    Key key = Key(1);
-    int bytes = 1;
-    
-    while (!key.atMax)
-    {
-        cipher.Encrypt(key);
-        if (cipher.doesContainLocationBased(value, 5))
-        {
-            key.printKey();
-            printf(" -> ");
-            cipher.printOutCipher();
-            printf("\n");
+    std::ifstream file(filea);
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            // using printf() in all tests for consistency
+            data->push_back(line.c_str());
         }
-        if (bytes != key.length())
-        {
-
-            printf("[Now using %i byte keys]\n", bytes);
-            bytes = key.length();
-        }
-        key++;
-
+        file.close();
     }
-    return 1;
-}
-
-int multiThreadedBruteForce(Cipher cipher)
-{
-    //atomic <char>[400] cipher;
-    
-    Key key = Key(1);
-    vector<thread> threads;
-    int keysPerThread = 2048;
-
-    for (int x = 0; x < THREADS; x++)// loops through threads to see if one is available
-    {
-            threads.push_back(thread(ThreadedCipher(), cipher.cipher, cipher.length, key, keysPerThread, 1, x));
-            key.Add(keysPerThread);
-    }
-
-    while (!key.atMax && key.length() <= MAX_BYTES)
-    {
-        for (int x = 0; x < THREADS; x++)// loops through threads to see if one is available
-        {
-            if (threads[x].joinable())
-            {
-                threads[x].join();
-                threads[x] = thread(ThreadedCipher(), cipher.cipher, cipher.length, key, keysPerThread, 1, x);
-                key.Add(keysPerThread);
-            }
-            
-        }
-
-    } // end loop
-    return 0;
-}
-
-void AsyncFunction(unsigned char *  cipher, int cipherLen, unsigned char * key, int keylen)
-{
-    int SubBox[256];
-    int a = 0;
-    int b = 0;
-    int swap = 0;
-
-    for (a = 0; a < 256; a++)
-    {
-        SubBox[a] = a;
-    }
-
-    for (a = 0; a < 256; a++)
-    {
-        b = (b + SubBox[a] + key[a % keylen]) % 256;
-        swap = SubBox[a];
-        SubBox[a] = SubBox[b];
-        SubBox[b] = swap;
-    }
-
-    //Encrypt the data
-    for (long Offset = 0; Offset < cipherLen; Offset++)
-    {
-        a = (a + 1) % 256;
-        b = (b + SubBox[a]) % 256;
-        swap = SubBox[a];
-        SubBox[a] = SubBox[b];
-        SubBox[b] = swap;
-        cipher[Offset] ^= SubBox[(SubBox[a] + SubBox[b]) % 256];
-    }
-    bool isAscii = true;
-    for (int x = 0; x < cipherLen; x++)
-    {
-        if (cipher[x] < 32 || cipher[x] > 126)
-        {
-            isAscii = false;
-        }
-    }
-    char out[300] = {0};
-    int v = 0;
-
-    char hex[] = { '0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f' };
-    out[v++] =  '[';
-    for (int x = 0; x < keylen; x++)
-    {
-        int l = key[x] / 16;
-        out[v++] = hex[l];
-        out[v++] = hex[key[x] % 16];
-        out[v++] = ' ';
-
-    }
-        
-    out[v++] = ']';
-    out[v++] = '\t';
-
-    for (int x = 0; x < cipherLen; x++)
-    {
-
-        out[v++] = cipher[x];
-
-    }
-   // mtxTcp.lock();
-   // printf("%s", out);
-   // mtxTcp.unlock();
-
-    fflush(stdout);
-
-    if(isAscii)
-        {
-        mtxTcp.lock();
-        printf("key %s\n", out);
-        mtxTcp.unlock();
-        }
-    if (cipher[0] == 'F' && cipher[1] == 'l' && cipher[2] == 'a' && cipher[3] == 'g' && cipher[4] == '=')
-    {
-        mtxTcp.lock();
-        printf("key %s -> %s \n", key, cipher);
-        mtxTcp.unlock();
-
-    }
-    free(key);
-    free(cipher);
-
 }
 
 void PrintHelp() {
@@ -312,16 +223,4 @@ void PrintHelp() {
     exit(EXIT_SUCCESS);
 }
 
-/*
-* RCrack4 -f HexCipher 
-returns 0 on atleast one match found
-returns 1 on failure to find any matches
--h --help displays help page
--w --wordlist species wordlist
--q --quiet no output
 
-
-by default program will run against cipher up to 4 bytes of key, returning all key and text pairs that contain only ascii characters.
--
-
-*/
