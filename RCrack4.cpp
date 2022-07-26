@@ -11,43 +11,53 @@ int main(int argc, char *argv[])
 {
     std::vector<char> fileData;
     std::vector<string> wordList;
-    int c_KeysPerThread = 4096;
+    const int c_KeysPerThread = 4096;
+    int longestWord = 0;
+    struct Options opt = parseInputs(argc, argv);
 
-    struct Options opt = ParseInputs(argc, argv);
+    //attempts to read cipher
     readCipherFile(argv[1], &fileData);
 
+    //attempts to readwordlist
     if (opt.ptrWordList)
     {
-        readWordListFile(opt.ptrWordList, &wordList);
+        longestWord = readWordListFile(opt.ptrWordList, &wordList);
     }
 
+    //displays cipher data
     printf("[!] Cipher read from file: \n");
+    for (char i : fileData)
+            std::cout << i << ' ';
     printf("\n");
-    char * tt = (char*)malloc(fileData.size() + 1);
-    ThreadedCipher::s_ptrCipher = (unsigned char*)malloc(fileData.size() + 1);
-  
 
+    //sets up 
+    ThreadedCipher::s_ptrCipher = (unsigned char*)malloc(fileData.size() + 1);
     if (ThreadedCipher::s_ptrCipher)
     {
         ThreadedCipher::s_ptrCipher = (unsigned char *)fileData.data();
         ThreadedCipher::s_ptrCipher[fileData.size()] = 0;
     }
+    else
+    {
+        printf("malloc issue");
+    }
 
+    //Handle wordlist
+    if (&wordList != NULL)
+    {
+        ThreadedCipher::s_ptrWordlist = &wordList;
+        ThreadedCipher::s_LongestWord = longestWord;
+    }
+
+    ThreadedCipher::s_CipherLen = fileData.size();
     ThreadedCipher::s_Verbose = opt.verbose;
     ThreadedCipher::s_Positional = opt.positional;
     ThreadedCipher::s_ptrOutfile = opt.ptrOutFile;
-    ThreadedCipher::s_CipherLen = fileData.size();
 
+
+    //starts key
     Key key = Key(opt.minBytes);
     vector<thread> threads;
-
-    //test
-    Key ke = Key(2);
-    ke.Add(24673);
-    ThreadedCipher ciph = ThreadedCipher();
-    ciph(ke, c_KeysPerThread, 10);
-
-    //end test
 
     for (int x = 0; x < opt.threads; x++)// seeds the original threads into a vector
     {
@@ -55,9 +65,9 @@ int main(int argc, char *argv[])
         key.Add(c_KeysPerThread);
     }
 
-    while (!key.atMax && key.length() <= opt.maxBytes)
+    while (!key.atMax && key.length() <= opt.maxBytes)// loops through threads to see if one is available
     {
-        for (int x = 0; x < opt.threads; x++)// loops through threads to see if one is available
+        for (int x = 0; x < opt.threads; x++)
         {
             if (threads[x].joinable())
             {
@@ -69,6 +79,8 @@ int main(int argc, char *argv[])
         }
 
     }
+
+    //Memory leak stopping
     if (ThreadedCipher::s_ptrWordlist)free(ThreadedCipher::s_ptrWordlist);
     if (ThreadedCipher::s_ptrCipher)free(ThreadedCipher::s_ptrCipher);
     if (ThreadedCipher::s_ptrOutfile)free(ThreadedCipher::s_ptrOutfile);
@@ -76,10 +88,10 @@ int main(int argc, char *argv[])
     if (opt.ptrWordList) free(opt.ptrWordList);
 }
 
-void WriteFile() 
+void writeFile() 
 {
     FILE* pFile;
-    char buffer[100];
+    char buffer[1000];
 
     pFile = fopen("output.txt", "a");
     if (pFile == NULL) perror("Error opening file");
@@ -94,8 +106,12 @@ void WriteFile()
     }
 }
 
-struct Options ParseInputs(int argc, char** argv)
+struct Options parseInputs(int argc, char** argv)
 {
+    if (argc == 1)
+    {
+        printHelp();
+    }
     struct Options opt;
     // check valid cipher 
     char* key;
@@ -116,6 +132,11 @@ struct Options ParseInputs(int argc, char** argv)
             opt.ptrOutFile = (char*)malloc(sizeof(argv[x + 1] ) + 1);
             strcpy(opt.ptrOutFile, argv[x + 1]);
             x += 2;
+
+        }
+        if (strcmp(argv[x], "-h") == 0 || strcmp(argv[x], "--help") == 0)
+        {
+            printHelp();
 
         }
         else if (strcmp(argv[x], "-n") == 0 || strcmp(argv[x], "--min-bytes") == 0)
@@ -152,11 +173,6 @@ struct Options ParseInputs(int argc, char** argv)
         {
             opt.verbose = -1;
             x++;
-        }
-        else if (strcmp(argv[x], "-s") == 0 || strcmp(argv[x], "--singleKey") == 0)
-        {
-           key = (char*)malloc(sizeof(argv[x + 1]) + 1);
-            x += 2;
         }
         else if (strcmp(argv[x], "-w") == 0 || strcmp(argv[x], "--word-list") == 0)
         {
@@ -197,30 +213,34 @@ int readCipherFile(char * file, std::vector<char> *data)
 }
 
 
-void readWordListFile(char* filea, std::vector<string>* data)
+int readWordListFile(char* filea, std::vector<string>* data)
 {
+    int longest = 0;
     std::ifstream file(filea);
     if (file.is_open()) {
         std::string line;
         while (std::getline(file, line)) {
-            // using printf() in all tests for consistency
             data->push_back(line.c_str());
+            longest = line.size() > longest ? line.size() : longest;
         }
         file.close();
     }
+    return longest;
 }
 
-void PrintHelp() {
-    printf("RCrack4 - RC4 encrpytion bruteforcer \n");
-    printf("Usage:\n");
-    printf("RCrack4 <HEXCIPHER> [-] [-w wordlist]\n\
-        Look, basically you input your cipher after -c then choose if you want a brute force (-b) or\n \
-		dictionary (-d) attack. With a brute force attack you can choose what charsets you want to\n \
-		include such as lower (l), upper (u), numeric (n), or symbols (s), just include them as one\n \
-		string, no spaces. Or you can even specify a custom charset (-m), then you provide the upper\n \
-		and lower limits (-l). Default charset is lun, default limits are 1 4. For a dictionary attack\n \
-		just be sure to include a wordlist (-w).\n");
+void printHelp() {
+    const char* help = "RCrack4 - RC4 encrpytion bruteforcer \n\n"
+        "RCrack4 <HEXCIPHER> [options][-w wordlist]\n"
+        "-o <filename> --out-file the file that is outputted\n"
+        "-n <number> --min-bytes sets the min bytes of key\n"
+        "-x <number> --max-bytes sets the max bytes of key\n"
+        "-t <number> --threads will set the max number of threads to be run\n"
+        "-w <filename> --wordlist should be a text file with words searched\n"
+        "-p --positional will treat the wordlist as position sensitve, use * for wildcards, much faster as it doesnt parse the whole cipher\n"
+        "-k --keyasciionly will only test keys that are ascii characters\n"
+        "-v --verbose shows more info\n"
+        "-q --quiet mutes all output in cmd prompt\n"
+        "-h --help calls this page\n";
+    printf(help);
     exit(EXIT_SUCCESS);
 }
-
-

@@ -20,13 +20,14 @@ using namespace std;
 
 
 std::mutex mtxFlagFound;
-std::mutex mtxTcp;
+std::mutex mtxPrintToString;
+std::mutex mtxPrintf;
 
 
 
-void WriteFile();
-struct Options ParseInputs(int argc, char** argv);
+void writeFile();
+struct Options parseInputs(int argc, char** argv);
 int readCipherFile(char*, std::vector<char>*);
 int multiThreadedBruteForce(vector<char>);
-void readWordListFile(char* file, std::vector<string>* data);
-void PrintHelp();
+int readWordListFile(char* file, std::vector<string>* data);
+void printHelp();

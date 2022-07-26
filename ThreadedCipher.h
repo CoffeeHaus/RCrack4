@@ -5,8 +5,9 @@
 #include <mutex>
 #include <vector>
 
-extern std::mutex mtxTcp;
-
+extern std::mutex mtxPrintf;
+extern std::mutex mtxFlagFound;
+extern std::mutex mtxPrintToString;
 
 class ThreadedCipher
 {
@@ -17,13 +18,14 @@ public:
     void operator()(Key k, int keys, int setThread);
     void print();
     void printKey();
-    void BruteForceAscii();
-    void PositionalKey();
-    void EncryptCipher();
+    void bruteForceAscii();
+    void encryptCipher();
     bool isAscii();
-    void ThreadStartPrint();
-    void ThreadEndPrint();
-    void WordList();
+    void threadStartPrint();
+    void threadEndPrint();
+    void wordList();
+    bool doesMatchWordList();
+    char*  cipherToString();
 
     static std::vector<std::string>* s_ptrWordlist;
     static unsigned char* s_ptrCipher ;
@@ -31,9 +33,9 @@ public:
     static int s_Positional;
     static int s_Verbose;
     static int s_CipherLen;
-
+    static int s_LongestWord;
     unsigned char* outCipher;
-    unsigned int length = 0;
+
     Key key;
     int keysCovered = 1;
     int thread;
