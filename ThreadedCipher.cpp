@@ -8,23 +8,26 @@
  int ThreadedCipher::s_Verbose = 0;
  int ThreadedCipher::s_CipherLen = 0;
  int ThreadedCipher::s_LongestWord = 0;
+ bool ThreadedCipher::s_FlagFound = false;
 
-ThreadedCipher::ThreadedCipher() { };
+ThreadedCipher::ThreadedCipher() 
+{
+}
  
 ThreadedCipher::~ThreadedCipher()
 {
-    if(outCipher)free(outCipher );
-};
+}
+
 void ThreadedCipher::operator()(Key k, int keys, int setThread)
 {
     //set key
     key.setKey(k);
     thread = setThread;
     keysCovered = keys;
-
+    outCipher = (unsigned char*)malloc(ThreadedCipher::s_CipherLen + 1);
     threadStartPrint();
 
-    outCipher = (unsigned char*)malloc(ThreadedCipher::s_CipherLen + 1);
+    
     if (ThreadedCipher::s_ptrWordlist != NULL)
     {
         wordList();
@@ -35,16 +38,17 @@ void ThreadedCipher::operator()(Key k, int keys, int setThread)
         bruteForceAscii();
     }
     threadEndPrint();
-
+    free(outCipher);
 }
 
 void ThreadedCipher::bruteForceAscii()
 {
     for (int x = 0; x < keysCovered; x++)
     {
-        encryptCipher();
+        encryptCipher(ThreadedCipher::s_Positional);
         if (isAscii())
         {
+            ThreadedCipher::s_FlagFound = true;
             print();
         }
         key++;
@@ -75,7 +79,7 @@ void ThreadedCipher::print()
 
     char * cipherStr = cipherToString(); // malloc
 
-    if (ThreadedCipher::s_Verbose >= 1)
+    if (ThreadedCipher::s_Verbose >= 0)
     {
         mtxPrintf.lock();// print to cmd
         fflush(stdout);
@@ -87,7 +91,7 @@ void ThreadedCipher::print()
     {
         mtxPrintToString.lock(); // print to file
         FILE* pFileTXT = fopen(s_ptrOutfile, "a");
-        fprintf(pFileTXT, "[\!] KEY[%s] -> %s\n", strKey, cipherStr); // append instead of overwrite
+        fprintf(pFileTXT, "[\!] KEY[%s] -> %s\n", strKey, cipherStr); // append to file
         fclose(pFileTXT);
 
         mtxPrintToString.unlock();
@@ -97,17 +101,17 @@ void ThreadedCipher::print()
     if(strKey)free(strKey);//free malloc
 }
 
-void ThreadedCipher::encryptCipher()
+void ThreadedCipher::encryptCipher(bool pos)
 {
     int length = 0;// If the word list is positional, then there is no reason to encrypt all of the cipher
-    if (ThreadedCipher::s_Positional)
+    if (pos)
     {
-        memcpy(outCipher, ThreadedCipher::s_ptrCipher, ThreadedCipher::s_LongestWord + 1);
+        memcpy(outCipher, ThreadedCipher::s_ptrCipher, ThreadedCipher::s_LongestWord);
         length = ThreadedCipher::s_LongestWord;
     }
     else
     {
-        memcpy(outCipher, ThreadedCipher::s_ptrCipher, ThreadedCipher::s_CipherLen + 1);
+        memcpy(outCipher, ThreadedCipher::s_ptrCipher, ThreadedCipher::s_CipherLen);
         length = ThreadedCipher::s_CipherLen;
     }
     
@@ -144,12 +148,12 @@ void ThreadedCipher::encryptCipher()
         SubBox[b] = swap;
         outCipher[Offset] ^= SubBox[(SubBox[a] + SubBox[b]) % 256];
     }
-    outCipher[length + 1] = 0;
+    outCipher[length] = 0;
 }
 
 void ThreadedCipher::threadStartPrint()
 {
-    if (opt.verbose >= 1)
+    if (ThreadedCipher::s_Verbose >= 2)
     {
         char* strkey = (char*)malloc(key.length() * 3);;
         key.GetKeyString(strkey);
@@ -162,7 +166,7 @@ void ThreadedCipher::threadStartPrint()
 
 void ThreadedCipher::threadEndPrint()
 {
-    if (opt.verbose >= 1)
+    if (ThreadedCipher::s_Verbose >= 2)
     {
         char* strkey = (char*)malloc(key.length() * 3);;
         key.GetKeyString(strkey);
@@ -177,7 +181,8 @@ void ThreadedCipher::wordList()
 {
     for (int x = 0; x < keysCovered; x++)
     {
-        encryptCipher();
+
+        encryptCipher(ThreadedCipher::s_Positional);
         if (doesMatchWordList())
         {
             print();
@@ -202,7 +207,11 @@ bool ThreadedCipher::doesMatchWordList()
                     }
 
                 }
-            if (isWordMatch) { return true; }
+            if (isWordMatch) 
+            {   
+                ThreadedCipher::s_FlagFound = true;
+                return true; 
+            }
 
                     
         }
@@ -221,7 +230,11 @@ bool ThreadedCipher::doesMatchWordList()
                         if (element[z] != outCipher[x + z])
                             isWordMatch = false;
                     }
-                    if (isWordMatch)return true;
+                    if (isWordMatch)
+                    {
+                        ThreadedCipher::s_FlagFound = true;
+                        return true;
+                    }
                 }
             }
 
@@ -239,6 +252,9 @@ char* ThreadedCipher::cipherToString()
     bool lastWasHex = false;    
     int counter = 0;
     
+    
+    encryptCipher(false);
+
 
     for (int x = 0; x < ThreadedCipher::s_CipherLen; x++)
     {

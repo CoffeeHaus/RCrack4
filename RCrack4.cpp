@@ -25,12 +25,11 @@ int main(int argc, char *argv[])
     }
 
     //displays cipher data
-    printf("[!] Cipher read from file: \n");
-    for (char i : fileData)
-            std::cout << i << ' ';
-    printf("\n");
+    printf("[!] Cipher read from file: \n[!]%s[!]\n", fileData.data());
 
-    //sets up 
+
+
+    //sets up cipher pointer to be read by threads
     ThreadedCipher::s_ptrCipher = (unsigned char*)malloc(fileData.size() + 1);
     if (ThreadedCipher::s_ptrCipher)
     {
@@ -39,7 +38,7 @@ int main(int argc, char *argv[])
     }
     else
     {
-        printf("malloc issue");
+        perror("malloc issue");
     }
 
     //Handle wordlist
@@ -58,6 +57,20 @@ int main(int argc, char *argv[])
     //starts key
     Key key = Key(opt.minBytes);
     vector<thread> threads;
+    int currentKey = 0;
+   
+
+
+    if (ThreadedCipher::s_Verbose >= 1)
+    {
+        mtxPrintf.lock();// print to cmd
+        fflush(stdout);
+        char str[1000];
+        key.GetKeyString(str);
+        printf("[!] Starting with key[%s] \n", str);
+        currentKey = 0;
+        mtxPrintf.unlock();
+        }
 
     for (int x = 0; x < opt.threads; x++)// seeds the original threads into a vector
     {
@@ -65,8 +78,22 @@ int main(int argc, char *argv[])
         key.Add(c_KeysPerThread);
     }
 
-    while (!key.atMax && key.length() <= opt.maxBytes)// loops through threads to see if one is available
+    while (!key.atMax && key.length() <= opt.maxBytes  && (!ThreadedCipher::s_FlagFound || !opt.firstfound))// loops through threads to see if one is available, also will end once one key is found if --firstfound is set to true
     {
+        if (currentKey > c_KeysPerThread * 10000)
+        {
+            if (ThreadedCipher::s_Verbose >= 1)
+            {
+                mtxPrintf.lock();// print to cmd
+                fflush(stdout);
+                char str[1000];
+                key.GetKeyString(str);
+                printf("[!] Now testing key[%s] \n", str);
+                currentKey = 0;
+               mtxPrintf.unlock();
+            }
+        }
+
         for (int x = 0; x < opt.threads; x++)
         {
             if (threads[x].joinable())
@@ -74,10 +101,16 @@ int main(int argc, char *argv[])
                 threads[x].join();
                 threads[x] = thread(ThreadedCipher(), key, c_KeysPerThread, x);
                 key.Add(c_KeysPerThread);
+                currentKey += c_KeysPerThread;
             }
 
         }
 
+    }
+    // waits for all threads to join
+    for (int x = 0; x < opt.threads; x++)
+    {
+        threads[x].join();
     }
 
     //Memory leak stopping
@@ -86,6 +119,14 @@ int main(int argc, char *argv[])
     if (ThreadedCipher::s_ptrOutfile)free(ThreadedCipher::s_ptrOutfile);
     if (opt.ptrOutFile)  free(opt.ptrOutFile);
     if (opt.ptrWordList) free(opt.ptrWordList);
+    if (ThreadedCipher::s_FlagFound == true)
+    {
+        exit(EXIT_SUCCESS);
+    }
+   else
+    {
+       exit(EXIT_FAILURE);
+    }
 }
 
 void writeFile() 
@@ -120,6 +161,7 @@ struct Options parseInputs(int argc, char** argv)
         if (!ifile)
         {
         perror("Error opening file");
+        printHelp();
         }
 
     //TODO FIX
@@ -166,12 +208,22 @@ struct Options parseInputs(int argc, char** argv)
         }
         else if (strcmp(argv[x], "-v") == 0 || strcmp(argv[x], "--verbose") == 0)
         {
-            opt.verbose = 1;
+            if (opt.verbose = -1)opt.verbose = 1;
+            x++;
+        }
+        else if (strcmp(argv[x], "-vv") == 0 || strcmp(argv[x], "--verbose2") == 0)
+        {
+            if(opt.verbose = -1)opt.verbose = 2;
             x++;
         }
         else if (strcmp(argv[x], "-q") == 0 || strcmp(argv[x], "--quiet") == 0)
         {
             opt.verbose = -1;
+            x++;
+        }
+        else if (strcmp(argv[x], "-f") == 0 || strcmp(argv[x], "--firstfound") == 0)
+        {
+            opt.firstfound = true;
             x++;
         }
         else if (strcmp(argv[x], "-w") == 0 || strcmp(argv[x], "--word-list") == 0)
@@ -184,7 +236,7 @@ struct Options parseInputs(int argc, char** argv)
             }
 
             opt.ptrWordList = (char*)malloc(sizeof(argv[x + 1]) + 1);
-            strcpy(opt.ptrWordList, argv[x + 1]);
+            if(opt.ptrWordList)strcpy(opt.ptrWordList, argv[x + 1]);
             x += 2;
         }
         else
@@ -210,17 +262,19 @@ int readCipherFile(char * file, std::vector<char> *data)
     *data = bytes;
     input.close();
     return bytes.size();
+
+
 }
 
-
-int readWordListFile(char* filea, std::vector<string>* data)
+//read words list and builds a vector of strings
+int readWordListFile(char* fileName, std::vector<string>* wordList)
 {
     int longest = 0;
-    std::ifstream file(filea);
+    std::ifstream file(fileName);
     if (file.is_open()) {
         std::string line;
         while (std::getline(file, line)) {
-            data->push_back(line.c_str());
+            wordList->push_back(line.c_str());
             longest = line.size() > longest ? line.size() : longest;
         }
         file.close();
@@ -232,15 +286,16 @@ void printHelp() {
     const char* help = "RCrack4 - RC4 encrpytion bruteforcer \n\n"
         "RCrack4 <HEXCIPHER> [options][-w wordlist]\n"
         "-o <filename> --out-file the file that is outputted\n"
-        "-n <number> --min-bytes sets the min bytes of key\n"
-        "-x <number> --max-bytes sets the max bytes of key\n"
-        "-t <number> --threads will set the max number of threads to be run\n"
+        "-n <number> --min-bytes sets the min bytes of key, default is 1\n"
+        "-x <number> --max-bytes sets the max bytes of key, default is 8\n"
+        "-t <number> --threads will set the max number of threads to be run, default is 20\n"
         "-w <filename> --wordlist should be a text file with words searched\n"
         "-p --positional will treat the wordlist as position sensitve, use * for wildcards, much faster as it doesnt parse the whole cipher\n"
         "-k --keyasciionly will only test keys that are ascii characters\n"
         "-v --verbose shows more info\n"
+        "-vv --verbose2 even more verbose"
         "-q --quiet mutes all output in cmd prompt\n"
         "-h --help calls this page\n";
     printf(help);
-    exit(EXIT_SUCCESS);
+    exit(EXIT_FAILURE);
 }

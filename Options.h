@@ -1,6 +1,6 @@
 #pragma once
 struct Options {
-    int maxBytes = 256;
+    int maxBytes = 8;
     int minBytes = 1;
     int verbose = 0;
     int threads = 20;
@@ -8,5 +8,6 @@ struct Options {
     char* ptrWordList = NULL;
     char* ptrOutFile = NULL;
     char* ptrCipher = NULL;
+    bool firstfound = false;
     bool help = false;
 };
