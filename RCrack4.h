@@ -18,8 +18,6 @@
 using namespace std;
 
 
-
-std::mutex mtxFlagFound;
 std::mutex mtxPrintToString;
 std::mutex mtxPrintf;
 
